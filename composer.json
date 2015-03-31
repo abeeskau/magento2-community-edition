@@ -2,7 +2,7 @@
     "name": "magento/product-community-edition",
     "description": "eCommerce Platform for Growth (Community Edition)",
     "type": "project",
-    "version": "0.42.0-beta8",
+    "version": "0.74.0-beta2",
     "license": [
         "OSL-3.0",
         "AFL-3.0"
@@ -32,7 +32,9 @@
         "magento/zendframework1": "1.12.10",
         "composer/composer": "1.0.0-alpha8",
         "monolog/monolog": "1.11.0",
+        "oyejorge/less.php": "1.7.0.3",
         "tubalmartin/cssmin": "2.4.8-p4",
+        "magento/magento-composer-installer": "*",
         "magento/magento2-base": "self.version",
         "magento/module-admin-notification": "self.version",
         "magento/module-authorization": "self.version",
@@ -52,11 +54,11 @@
         "magento/module-checkout-agreements": "self.version",
         "magento/module-cms": "self.version",
         "magento/module-cms-url-rewrite": "self.version",
+        "magento/module-config": "self.version",
         "magento/module-configurable-import-export": "self.version",
         "magento/module-configurable-product": "self.version",
         "magento/module-contact": "self.version",
         "magento/module-cookie": "self.version",
-        "magento/module-core": "self.version",
         "magento/module-cron": "self.version",
         "magento/module-currency-symbol": "self.version",
         "magento/module-customer": "self.version",
@@ -81,6 +83,7 @@
         "magento/module-integration": "self.version",
         "magento/module-layered-navigation": "self.version",
         "magento/module-log": "self.version",
+        "magento/module-media-storage": "self.version",
         "magento/module-msrp": "self.version",
         "magento/module-multishipping": "self.version",
         "magento/module-newsletter": "self.version",
@@ -112,6 +115,7 @@
         "magento/module-url-rewrite": "self.version",
         "magento/module-user": "self.version",
         "magento/module-usps": "self.version",
+        "magento/module-variable": "self.version",
         "magento/module-version": "self.version",
         "magento/module-webapi": "self.version",
         "magento/module-weee": "self.version",
@@ -133,6 +137,7 @@
         "phpunit/phpunit": "4.1.0",
         "squizlabs/php_codesniffer": "1.5.3",
         "phpmd/phpmd": "@stable",
+        "pdepend/pdepend": "2.0.6",
         "lib-libxml": "*",
         "ext-ctype": "*",
         "ext-gd": "*",
@@ -143,6 +148,7 @@
         "ext-hash": "*",
         "ext-curl": "*",
         "ext-iconv": "*",
+        "ext-intl": "*",
         "sjparkinson/static-review": "~4.1",
         "fabpot/php-cs-fixer": "~1.2",
         "lusitanian/oauth": "~0.3"
@@ -152,7 +158,8 @@
     },
     "autoload": {
         "psr-4": {
-            "Magento\\Framework\\": "lib/internal/Magento/Framework/"
+            "Magento\\Framework\\": "lib/internal/Magento/Framework/",
+            "Magento\\Setup\\": "setup/src/Magento/Setup/"
         }
     },
     "autoload-dev": {
@@ -162,8 +169,7 @@
             "Magento\\Tools\\Sanity\\": "dev/build/publication/sanity/Magento/Tools/Sanity/",
             "Magento\\TestFramework\\Inspection\\": "dev/tests/static/framework/Magento/TestFramework/Inspection/",
             "Magento\\TestFramework\\Utility\\": "dev/tests/static/framework/Magento/TestFramework/Utility/",
-            "Magento\\ToolkitFramework\\": "dev/tools/performance-toolkit/framework/Magento/ToolkitFramework/",
-            "Magento\\Setup\\": "setup/src/Magento/Setup/"
+            "Magento\\ToolkitFramework\\": "dev/tools/performance-toolkit/framework/Magento/ToolkitFramework/"
         }
     },
     "repositories": [
