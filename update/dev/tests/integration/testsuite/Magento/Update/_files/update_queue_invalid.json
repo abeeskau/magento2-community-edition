@@ -33,6 +33,19 @@
           }
         ]
       }
+    },
+    {
+      "name": "uninstall",
+      "params": {
+        "components": [
+          {
+            "name": "packageName3"
+          },
+          {
+            "name": "packageName4"
+          }
+        ]
+      }
     }
   ],
   "ignored_field": ''

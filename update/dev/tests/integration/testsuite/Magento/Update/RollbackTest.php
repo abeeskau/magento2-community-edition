@@ -32,6 +32,16 @@ class RollbackTest extends \PHPUnit_Framework_TestCase
      */
     protected $backupFileName;
 
+    /**
+     * @var \PharData
+     */
+    protected $backupFile;
+
+    /**
+     * @var \PHPUnit_Framework_MockObject_MockObject|\Magento\Update\Backup\BackupInfo
+     */
+    protected $backupInfo;
+
     protected function setup()
     {
         parent::setUp();
@@ -48,16 +58,23 @@ class RollbackTest extends \PHPUnit_Framework_TestCase
         if (!is_dir($this->excludedDir)) {
             mkdir($this->excludedDir);
         }
-        $this->backupFileName = uniqid('test_backup') . '.zip';
-        $this->rollBack = new \Magento\Update\Rollback($this->backupPath, $this->archivedDir);
+
+        $this->backupFileName = $this->backupPath . '/../' . uniqid() . '_code.tar';
+        $this->backupFile = new \PharData($this->backupFileName);
+        $this->backupInfo = $this->getMock('Magento\Update\Backup\BackupInfo', [], [], '', false);
+        $this->rollBack = new \Magento\Update\Rollback($this->backupPath, $this->archivedDir, null, $this->backupInfo);
     }
 
     protected function tearDown()
     {
         parent::tearDown();
         $this->autoRollbackHelper(2);
-        if (file_exists($this->backupPath . $this->backupFileName)) {
-            unlink($this->backupPath . $this->backupFileName);
+        if (file_exists($this->backupFileName)) {
+            unlink($this->backupFileName);
+        }
+        $gtzFile = str_replace('tar', 'tgz', $this->backupFileName);
+        if (file_exists($gtzFile)) {
+            unlink($gtzFile);
         }
 
         rmdir($this->backupPath);
@@ -66,12 +83,11 @@ class RollbackTest extends \PHPUnit_Framework_TestCase
     }
 
     /**
-     * @expectedException \Exception
-     * @expectedExceptionMessage No available backup file found.
+     * @expectedException \UnexpectedValueException
      */
     public function testAutoRollbackBackupFileUnavailable()
     {
-        $this->rollBack->execute();
+        $this->rollBack->execute('someInvalidfile');
     }
 
     public function testAutoRollback()
@@ -79,41 +95,29 @@ class RollbackTest extends \PHPUnit_Framework_TestCase
         // Setup
         $this->autoRollbackHelper();
 
-        $backupInfo = $this->getMockBuilder('Magento\Update\Backup\BackupInfo')
-            ->disableOriginalConstructor()
-            ->setMethods(['generateBackupFilename', 'getBackupPath', 'getBlacklist', 'getArchivedDirectory'])
-            ->getMock();
-        $backupInfo->expects($this->any())
-            ->method('generateBackupFilename')
-            ->willReturn($this->backupFileName);
-        $backupInfo->expects($this->any())
-            ->method('getBackupPath')
-            ->willReturn($this->backupPath);
-        $backupInfo->expects($this->any())
-            ->method('getArchivedDirectory')
-            ->willReturn($this->archivedDir);
-        $backupInfo->expects($this->any())
-            ->method('getBlacklist')
-            ->willReturn([$this->excludedDir]);
+        $this->backupFile->buildFromDirectory($this->archivedDir);
+        $this->backupFile->addEmptyDir("testDirectory");
+        $this->backupFile->compress(\Phar::GZ, '.tgz');
 
-        $statusMock = $this->getMockBuilder('Magento\Update\Status')->disableOriginalConstructor()->getMock();
-        $backup = new \Magento\Update\Backup($backupInfo, $statusMock);
-        $backupFilePath = $this->backupPath . $this->backupFileName;
-        $statusMock->expects($this->at(0))->method('add')->with(
-            sprintf('Creating backup archive "%s" ...', $backupFilePath)
-        );
-        $statusMock->expects($this->at(1))->method('add')->with(
-            sprintf('Backup archive "%s" has been created.', $backupFilePath)
-        );
-        $result = $backup->execute();
-        $this->assertInstanceOf('Magento\Update\Backup', $result);
+        $newFile = $this->backupPath . '/' . uniqid() . '_code.tgz';
+        copy($this->backupFileName, $newFile);
+        if (file_exists($this->backupFileName)) {
+            unset($this->backupFile);
+            unlink($this->backupFileName);
+        }
+        $gtzFile = str_replace('tar', 'tgz', $this->backupFileName);
+        if (file_exists($gtzFile)) {
+            unlink($gtzFile);
+        }
+        $this->backupFileName = $newFile;
 
         // Change the contents of a.txt
         $this->autoRollbackHelper(1);
         $this->assertEquals('foo changed', file_get_contents($this->archivedDir . 'a.txt'));
 
+        $this->backupInfo->expects($this->once())->method('getBlacklist')->willReturn(['excluded']);
         // Rollback process
-        $this->rollBack->execute();
+        $this->rollBack->execute($this->backupFileName);
 
         // Assert that the contents of a.txt has been restored properly
         $this->assertEquals('foo', file_get_contents($this->archivedDir . 'a.txt'));

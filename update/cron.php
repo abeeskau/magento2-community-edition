@@ -7,14 +7,27 @@
 require_once __DIR__ . '/app/bootstrap.php';
 
 $status = new \Magento\Update\Status();
+$cronReadinessChecker = new \Magento\Update\CronReadinessCheck();
+
+if (!$cronReadinessChecker->runReadinessCheck()) {
+    exit('Cron readiness check failed');
+}
+
 if ($status->isUpdateInProgress()) {
     exit('Cron is already in progress...');
 }
 
-$backupDirectory = UPDATER_BP . '/var/backup';
-if (!file_exists($backupDirectory) && !mkdir($backupDirectory)) {
-    $status->add(sprintf('Backup directory "%s" cannot be created.', $backupDirectory));
-    exit();
+if ($status->isUpdateError()) {
+    exit('There was an error in previous Updater jobs...');
+}
+
+$backupDirectory = BACKUP_DIR;
+if (!file_exists($backupDirectory)) {
+    if (!mkdir($backupDirectory)) {
+        $status->add(sprintf('Backup directory "%s" cannot be created.', $backupDirectory));
+        exit();
+    }
+    chmod($backupDirectory, 0770);
 }
 
 try {
@@ -25,19 +38,28 @@ try {
 }
 
 $jobQueue = new \Magento\Update\Queue();
+
 try {
-    foreach ($jobQueue->popQueuedJobs() as $job) {
+    while (!empty($jobQueue->peek()) &&
+        strpos($jobQueue->peek()[\Magento\Update\Queue::KEY_JOB_NAME], 'setup:') === false
+    ) {
+        $job = $jobQueue->popQueuedJob();
         $status->add(
             sprintf('Job "%s" has been started', $job)
         );
         try {
             $job->execute();
-            $status->add(sprintf('Job "%s" has been successfully completed', $job));
+            $status->add(sprintf('Job "%s" has successfully completed', $job));
         } catch (\Exception $e) {
-            $status->add(sprintf('An error occurred while executing job "%s": %s', $job, $e->getMessage()));
-        }
+            $status->setUpdateError();
+            $status->add(
+                sprintf('An error occurred while executing job "%s": %s', $job, $e->getMessage())
+            );
+            $status->setUpdateInProgress(false);
+        };
     }
 } catch (\Exception $e) {
+    $status->setUpdateError();
     $status->add($e->getMessage());
 } finally {
     $status->setUpdateInProgress(false);

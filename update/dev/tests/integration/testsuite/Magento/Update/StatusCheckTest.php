@@ -82,7 +82,7 @@ class StatusCheckTest extends \PHPUnit_Framework_TestCase
             ],
             'isNotRunning' => [
                 'isInProgress' => false,
-                'statusMessage' => 'Update application is NOT running'
+                'statusMessage' => 'Update application is not running'
             ],
         ];
     }

@@ -36,6 +36,7 @@ class JobFactoryTest extends \PHPUnit_Framework_TestCase
             'Backup Job' => [JobFactory::NAME_BACKUP, '\Magento\Update\Queue\JobBackup'],
             'Rollback Job' => [JobFactory::NAME_ROLLBACK, '\Magento\Update\Queue\JobRollback'],
             'Remove backups Job' => [JobFactory::NAME_REMOVE_BACKUPS, '\Magento\Update\Queue\JobRemoveBackups'],
+            'Uninstall Job' => [JobFactory::NAME_UNINSTALL, '\Magento\Update\Queue\JobComponentUninstall'],
         ];
     }
 

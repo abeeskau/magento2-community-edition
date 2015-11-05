@@ -2,3 +2,9 @@
 var
 pub/static
 update
+pub/media
+.git
+.svn
+node_modules
+.grunt
+.idea

@@ -58,8 +58,8 @@ class Status
         $updateInProgressFlagFilePath = null,
         $updateErrorFlagFilePath = null
     ) {
-        $this->statusFilePath = $statusFilePath ? $statusFilePath : UPDATER_BP . '/var/.update_status.txt';
-        $this->logFilePath = $logFilePath ? $logFilePath : UPDATER_BP . '/var/update_status.log';
+        $this->statusFilePath = $statusFilePath ? $statusFilePath : MAGENTO_BP . '/var/.update_status.txt';
+        $this->logFilePath = $logFilePath ? $logFilePath : MAGENTO_BP . '/var/update_status.log';
         $this->updateInProgressFlagFilePath = $updateInProgressFlagFilePath
             ? $updateInProgressFlagFilePath
             : MAGENTO_BP . '/var/.update_in_progress.flag';
@@ -71,45 +71,14 @@ class Status
     /**
      * Get current updater application status.
      *
-     * The last N status lines only may be requested using $maxNumberOfLines argument.
-     *
-     * To avoid display area overflow due to having overly long lines, $lineLengthLimit can be used.
-     * E.g. if some line is 2.3 times longer than $lineLengthLimit, it will account for 3 lines.
-     *
-     * @param int|null $maxNumberOfLines
-     * @param int $lineLengthLimit
      * @return string
      */
-    public function get($maxNumberOfLines = null, $lineLengthLimit = 120)
+    public function get()
     {
-        $status = '';
         if (file_exists($this->statusFilePath)) {
-            $fullStatusArray = file($this->statusFilePath);
-            $linesInFile = count($fullStatusArray);
-            if (!$maxNumberOfLines || ($maxNumberOfLines > $linesInFile)) {
-                $maxNumberOfLines = $linesInFile;
-            }
-            $totalNumberOfLinesOnDisplay = 0;
-            $totalLinesToRead = $maxNumberOfLines;
-            for ($currentLineNumber = 1; $currentLineNumber <= $maxNumberOfLines; $currentLineNumber++) {
-                $lineLength = strlen($fullStatusArray[$linesInFile - $currentLineNumber]);
-                /** Line length is at least 1 because of new line character, so ceil should evaluate at least to 1 */
-                $numberOfLinesOnDisplay = ceil($lineLength / $lineLengthLimit);
-                $totalNumberOfLinesOnDisplay += $numberOfLinesOnDisplay;
-                if ($numberOfLinesOnDisplay > 1) {
-                    $totalLinesToRead -= $numberOfLinesOnDisplay - 1;
-                    if ($totalLinesToRead < $currentLineNumber) {
-                        $totalLinesToRead = $currentLineNumber;
-                    }
-                }
-                if ($totalNumberOfLinesOnDisplay > $maxNumberOfLines) {
-                    break;
-                }
-            }
-            $slicedStatusArray = array_slice($fullStatusArray, -$totalLinesToRead, $totalLinesToRead);
-            $status = implode('', $slicedStatusArray);
+            return file_get_contents($this->statusFilePath);
         }
-        return $status;
+        return '';
     }
 
     /**
@@ -131,18 +100,33 @@ class Status
     }
 
     /**
+     * Add status update to show progress
+     *
+     * @param string $text
+     * @return $this
+     * @throws \RuntimeException
+     */
+    public function addWithoutNewLine($text)
+    {
+        $this->writeMessageToFile($text, $this->logFilePath, false);
+        $this->writeMessageToFile($text, $this->statusFilePath, false);
+        return $this;
+    }
+
+    /**
      * Write status information to the file.
      *
      * @param string $text
      * @param string $filePath
+     * @param bool $newline
      * @return $this
      * @throws \RuntimeException
      */
-    protected function writeMessageToFile($text, $filePath)
+    protected function writeMessageToFile($text, $filePath, $newline = true)
     {
         $isNewFile = !file_exists($filePath);
         if (!$isNewFile && file_get_contents($filePath)) {
-            $text = "\n{$text}";
+            $text = $newline ? PHP_EOL . "{$text}" :"{$text}";
         }
         if (false === file_put_contents($filePath, $text, FILE_APPEND)) {
             throw new \RuntimeException(sprintf('Cannot add status information to "%s"', $filePath));
@@ -218,6 +202,7 @@ class Status
      *
      * @param string $pathToFlagFile
      * @param bool $value
+     * @throws \RuntimeException
      * @return $this
      */
     protected function setFlagValue($pathToFlagFile, $value)

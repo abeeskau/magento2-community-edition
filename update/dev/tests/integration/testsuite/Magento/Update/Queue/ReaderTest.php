@@ -71,17 +71,8 @@ class ReaderTest extends \PHPUnit_Framework_TestCase
         $reader = new \Magento\Update\Queue\Reader($this->invalidQueueFilePath);
         $this->setExpectedException(
             '\RuntimeException',
-            "Content of \"{$this->invalidQueueFilePath}\" must a valid JSON."
+            "Content of \"{$this->invalidQueueFilePath}\" must be a valid JSON."
         );
         $reader->read();
-    }
-
-    public function testClearQueue()
-    {
-        $reader = new \Magento\Update\Queue\Reader($this->tmpQueueFilePath);
-        $reader->clearQueue();
-        $expectedQueueFileContent = '';
-        $actualQueueFileContent = file_get_contents($this->tmpQueueFilePath);
-        $this->assertEquals($expectedQueueFileContent, $actualQueueFileContent);
     }
 }

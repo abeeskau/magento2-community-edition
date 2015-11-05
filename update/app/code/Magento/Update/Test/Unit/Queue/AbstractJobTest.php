@@ -15,7 +15,7 @@ class AbstractJobTest extends \PHPUnit_Framework_TestCase
             ['targetArchivePath' => '/Users/john/archive.zip', 'sourceDirectory' => '/Users/john/Magento']
         );
         $this->assertEquals(
-            '<backup>{"targetArchivePath":"\/Users\/john\/archive.zip","sourceDirectory":"\/Users\/john\/Magento"}',
+            'backup {"targetArchivePath":"/Users/john/archive.zip","sourceDirectory":"/Users/john/Magento"}',
             (string)$job
         );
     }

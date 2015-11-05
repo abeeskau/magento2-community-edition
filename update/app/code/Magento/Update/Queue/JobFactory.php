@@ -18,6 +18,8 @@ class JobFactory
     const NAME_BACKUP = 'backup';
     const NAME_ROLLBACK = 'rollback';
     const NAME_REMOVE_BACKUPS = 'remove_backups';
+    const NAME_UNINSTALL = 'uninstall';
+    const NAME_MAINTENANCE_MODE = 'maintenance_mode';
     /**#@-*/
 
     /**
@@ -42,6 +44,12 @@ class JobFactory
                 break;
             case self::NAME_REMOVE_BACKUPS:
                 return new JobRemoveBackups($name, $params);
+                break;
+            case self::NAME_MAINTENANCE_MODE:
+                return new JobMaintenanceMode($name, $params);
+                break;
+            case self::NAME_UNINSTALL:
+                return new JobComponentUninstall($name, $params);
                 break;
             default:
                 throw new \RuntimeException(sprintf('"%s" job is not supported.', $name));

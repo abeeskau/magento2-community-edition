@@ -11,6 +11,14 @@ namespace Magento\Update\Backup;
  */
 class BackupInfo
 {
+    /**#@+
+     * Types of backup
+     */
+    const BACKUP_CODE = 'code';
+    const BACKUP_MEDIA = 'media';
+    const BACKUP_DB = 'db';
+    /**#@-*/
+
     /**
      * @var string
      */
@@ -45,6 +53,7 @@ class BackupInfo
     /**
      * Return files/directories, which need to be excluded from backup
      *
+     * @throws \RuntimeException
      * @return string[]
      */
     public function getBlacklist()
@@ -85,6 +94,56 @@ class BackupInfo
      */
     public function getBackupPath()
     {
-        return UPDATER_BACKUP_DIR;
+        return BACKUP_DIR;
+    }
+
+    /**
+     * Returns list of backup file paths
+     *
+     * @return array
+     */
+    public function getBackupFilePaths()
+    {
+        $timeStamp = $this->getLastBackupFileTimestamp();
+        $backupTypes = [self::BACKUP_CODE, self::BACKUP_MEDIA];
+        $backupPaths = [];
+        foreach ($backupTypes as $backupType) {
+            $fileName = BACKUP_DIR . $timeStamp . '_filesystem_' . $backupType .'.tgz';
+            if (!file_exists($fileName)) {
+                $backupPaths['error'][] = 'Backup file does not exist for "' . $backupType . '"';
+            } else {
+                $backupPaths[$backupType]['filename'] = $fileName;
+                $backupPaths[$backupType]['type'] = 'rollback';
+            }
+        }
+        $fileName = BACKUP_DIR . $timeStamp  .'_' . self::BACKUP_DB .'.gz';
+        if (!file_exists($fileName)) {
+            $backupPaths['error'][] = 'Backup file does not exist for "' . self::BACKUP_DB . '"';
+        } else {
+            $backupPaths[self::BACKUP_DB]['filename'] = $fileName;
+            $backupPaths[self::BACKUP_DB]['type'] = 'setup:rollback';
+        }
+        return $backupPaths;
+    }
+
+    /**
+     * Find the timestamp of the last backup file from backup directory.
+     *
+     * @throws \RuntimeException
+     * @return string
+     */
+    private function getLastBackupFileTimestamp()
+    {
+        $allFileList = scandir(BACKUP_DIR, SCANDIR_SORT_DESCENDING);
+        $backupFileName = '';
+
+        if (isset($allFileList) && !empty($allFileList)) {
+            $backupFileName = explode('_', $allFileList[0])[0];
+        }
+
+        if (empty($backupFileName)) {
+            throw new \RuntimeException('Backup directory is empty');
+        }
+        return $backupFileName;
     }
 }

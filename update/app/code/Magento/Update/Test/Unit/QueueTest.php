@@ -3,96 +3,153 @@
  * Copyright © 2015 Magento. All rights reserved.
  * See COPYING.txt for license details.
  */
-namespace Magento\Update;
+namespace Magento\Update\Test\Unit;
+
+use Magento\Update\Queue;
 
 class QueueTest extends \PHPUnit_Framework_TestCase
 {
     /**
-     * @var \Magento\Update\Queue
+     * @var \PHPUnit_Framework_MockObject_MockObject|\Magento\Update\Queue\Reader
      */
-    protected $queue;
+    private $reader;
 
     /**
-     * @var \Magento\Update\Queue\Reader|\PHPUnit_Framework_MockObject_MockObject
+     * @var \PHPUnit_Framework_MockObject_MockObject|\Magento\Update\Queue\Writer
      */
-    protected $queueReaderMock;
+    private $writer;
 
     /**
-     * @var \Magento\Update\Queue\JobFactory|\PHPUnit_Framework_MockObject_MockObject
+     * @var \PHPUnit_Framework_MockObject_MockObject|\Magento\Update\Queue\JobFactory
      */
-    protected $jobFactoryMock;
+    private $jobFactory;
 
-    protected function setUp()
+    /**
+     * @var Queue
+     */
+    private $queue;
+
+    public function setUp()
     {
-        parent::setUp();
-        $this->queueReaderMock = $this->getMockBuilder('Magento\Update\Queue\Reader')
-            ->disableOriginalConstructor()
-            ->getMock();
-        $this->jobFactoryMock = $this->getMockBuilder('Magento\Update\Queue\JobFactory')
-            ->disableOriginalConstructor()
-            ->getMock();
-        $this->queue = new \Magento\Update\Queue($this->queueReaderMock, $this->jobFactoryMock);
+        $this->reader = $this->getMock('Magento\Update\Queue\Reader', [], [], '', false);
+        $this->writer = $this->getMock('Magento\Update\Queue\Writer', [], [], '', false);
+        $this->jobFactory = $this->getMock('Magento\Update\Queue\JobFactory', [], [], '', false);
+        $this->queue = new Queue($this->reader, $this->writer, $this->jobFactory);
     }
 
-    public function testPopQueueJob()
+    public function testPeek()
     {
-        $queueJson = file_get_contents(__DIR__ . '/_files/update_queue_valid.json');
-        $this->queueReaderMock->expects($this->once())->method('read')->willReturn($queueJson);
-        $jobMock = $this->getMockBuilder('Magento\Update\Queue\AbstractJob')
-            ->disableOriginalConstructor()
-            ->getMockForAbstractClass();
-        $this->jobFactoryMock->expects($this->exactly(4))->method('create')->willReturn($jobMock);
-        /** Ensure that arguments are passed correctly to the job factory */
-        $this->jobFactoryMock->expects($this->at(0))->method('create')->with('backup', []);
-        $this->queueReaderMock->expects($this->once())->method('clearQueue');
-        $jobs = $this->queue->popQueuedJobs();
-        $this->assertCount(4, $jobs);
-        $this->assertInternalType('array', $jobs);
-        $this->assertSame($jobMock, $jobs[3]);
+        $this->reader->expects($this->once())
+            ->method('read')
+            ->willReturn('{"jobs": [{"name": "job A", "params" : []}, {"name": "job B", "params" : []}]}');
+        $this->assertEquals(['name' => 'job A', 'params' => []], $this->queue->peek());
     }
 
-    public function testPopQueueJobEmptyQueueFile()
+    public function testPeekEmpty()
     {
-        $queueJson = '';
-        $this->queueReaderMock->expects($this->once())->method('read')->willReturn($queueJson);
-        $this->assertEquals([], $this->queue->popQueuedJobs());
+        $this->reader->expects($this->once())
+            ->method('read')
+            ->willReturn('');
+        $this->assertEquals([], $this->queue->peek());
     }
 
     /**
-     * @dataProvider popQueueJobInvalidQueueFormatProvider
-     * @param string $queueJson
-     * @param string $expectedExceptionMessage
+     * @expectedException \RuntimeException
+     * @expectedExceptionMessage "params" field is missing for one or more jobs
      */
-    public function testPopQueueJobInvalidQueueFormat($queueJson, $expectedExceptionMessage)
+    public function testPeekException()
     {
-        $this->setExpectedException('\RuntimeException', $expectedExceptionMessage);
-        $this->queueReaderMock->expects($this->once())->method('read')->willReturn($queueJson);
-        $this->queue->popQueuedJobs();
-
+        $this->reader->expects($this->once())
+            ->method('read')
+            ->willReturn('{"jobs": [{"name": "job A"}, {"name": "job B"}]}');
+        $this->queue->peek();
     }
 
-    public function popQueueJobInvalidQueueFormatProvider()
+    /**
+     * @expectedException \RuntimeException
+     * @expectedExceptionMessage "jobs" field is missing or is not an array
+     */
+    public function testPeekExceptionNoJobsKey()
     {
-        return [
-            'Missing "jobs" field' => [
-                '{"invalid": []}',
-                '"jobs" field is missing or is not an array.'
+        $this->reader->expects($this->once())
+            ->method('read')
+            ->willReturn('{"foo": "bar"}');
+        $this->queue->peek();
+    }
 
-            ],
-            'Incorrect format of "jobs" field' => [
-                '{"jobs": "string_value"}',
-                '"jobs" field is missing or is not an array.'
+    public function testPopQueuedJob()
+    {
+        $this->reader->expects($this->once())
+            ->method('read')
+            ->willReturn('{"jobs": [{"name": "job A", "params" : []}, {"name": "job B", "params" : []}]}');
+        $job = $this->getMockForAbstractClass('Magento\Update\Queue\AbstractJob', [], '', false);
+        $this->jobFactory->expects($this->once())->method('create')->with('job A', [])->willReturn($job);
+        $rawData = ['jobs' => [['name' => 'job B', 'params' => []]]];
+        $this->writer->expects($this->once())->method('write')->with(json_encode($rawData, JSON_PRETTY_PRINT));
+        $this->assertEquals($job, $this->queue->popQueuedJob());
+    }
 
-            ],
-            'Missing job name' => [
-                '{"jobs": [{"params": {}}]}',
-                '"name" field is missing for one or more jobs.'
+    public function testPopQueuedJobEmptyAfter()
+    {
+        $this->reader->expects($this->once())
+            ->method('read')
+            ->willReturn('{"jobs": [{"name": "job A", "params" : []}]}');
+        $job = $this->getMockForAbstractClass('Magento\Update\Queue\AbstractJob', [], '', false);
+        $this->jobFactory->expects($this->once())->method('create')->with('job A', [])->willReturn($job);
+        $this->writer->expects($this->once())->method('write')->with('');
+        $this->assertEquals($job, $this->queue->popQueuedJob());
+    }
 
-            ],
-            'Missing job params' => [
-                '{"jobs": [{"name": "backup"}]}',
-                '"params" field is missing for one or more jobs.'
-            ],
-        ];
+    /**
+     * @expectedException \RuntimeException
+     * @expectedExceptionMessage "params" field is missing for one or more jobs
+     */
+    public function testPopQueuedJobException()
+    {
+        $this->reader->expects($this->once())
+            ->method('read')
+            ->willReturn('{"jobs": [{"name": "job A"}, {"name": "job B"}]}');
+        $this->writer->expects($this->never())->method('write');
+        $this->queue->popQueuedJob();
+    }
+
+    /**
+     * @expectedException \RuntimeException
+     * @expectedExceptionMessage "jobs" field is missing or is not an array
+     */
+    public function testPopQueuedJobExceptionNoJobsKey()
+    {
+        $this->reader->expects($this->once())
+            ->method('read')
+            ->willReturn('{"foo": "bar"}');
+        $this->writer->expects($this->never())->method('write');
+        $this->queue->popQueuedJob();
+    }
+
+    public function testAddJobs()
+    {
+        $queue = ['jobs' => []];
+        $this->reader->expects($this->at(0))->method('read')->willReturn('');
+        $queue['jobs'][] = ['name' => 'job A', 'params' => []];
+        $this->writer->expects($this->at(0))
+            ->method('write')
+            ->with(json_encode($queue, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $this->reader->expects($this->at(1))
+            ->method('read')
+            ->willReturn(json_encode($queue, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $queue['jobs'][] = ['name' => 'job B', 'params' => []];
+        $this->writer->expects($this->at(1))
+            ->method('write')
+            ->with(json_encode($queue, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $this->queue->addJobs([['name' => 'job A', 'params' => []], ['name' => 'job B', 'params' => []]]);
+    }
+
+    /**
+     * @expectedException \RuntimeException
+     * @expectedExceptionMessage field is missing for one or more jobs
+     */
+    public function testAddJobsInvalidJobs()
+    {
+        $this->queue->addJobs([['no_name' => 'no job', 'no_params' => []]]);
     }
 }

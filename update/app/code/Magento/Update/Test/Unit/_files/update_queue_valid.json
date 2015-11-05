@@ -22,7 +22,7 @@
     {
       "name": "update",
       "params": {
-        "require": [
+        "components": [
           {
             "name": "packageName1",
             "version": "1.0.0"
@@ -30,6 +30,21 @@
           {
             "name": "packageName2",
             "version": "2.0.0"
+          }
+        ]
+      }
+    },
+    {
+      "name": "uninstall",
+      "params": {
+        "components": [
+          {
+            "name": "packageName3",
+            "version": "3.0.0"
+          },
+          {
+            "name": "packageName4",
+            "version": "4.0.0"
           }
         ]
       }

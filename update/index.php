@@ -6,23 +6,79 @@
 
 require_once __DIR__ . '/app/bootstrap.php';
 
+if (!file_exists(MAGENTO_BP . '/app/etc/config.php') || !file_exists(MAGENTO_BP . '/app/etc/env.php')) {
+    header('Location: ../setup');
+    die();
+}
+
+header('X-Frame-Options: SAMEORIGIN');
+
 $status = new \Magento\Update\Status();
 
-$statusMessage = $status->get(10);
 $isUpdateInProgress = $status->isUpdateInProgress();
-
-/** TODO: Section below is added for demo purposes */
-$status->add("Message #" . rand(1, 1000));
-if (!$statusMessage) {
-    $statusMessage = 'Please wait for job processing to start.';
-}
+$statusMessage = '';
+$statusMessage .= $status->get();
 $statusMessage = str_replace("\n", "<br />", $statusMessage);
-//$isUpdateInProgress = (bool)rand(0, 1);
-/** TODO: End of section added for demo */
+$queue =  new \Magento\Update\Queue();
+$pending = !$status->isUpdateInProgress() && !$queue->isEmpty() && !$status->isUpdateError();
 
-if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
-    /* Ajax request processing */
-    echo json_encode(['statusMessage' => $statusMessage, 'isUpdateInProgress' => $isUpdateInProgress]);
+if (isset($_SERVER['PATH_INFO']) && !empty($_SERVER['PATH_INFO'])) {
+    if($_SERVER['PATH_INFO'] === '/rollback' && file_exists(MAGENTO_BP . '/var/.update_error.flag')) {
+        try {
+            $queue->clear();
+            $backupInfo = new \Magento\Update\Backup\BackupInfo();
+
+            $backupPaths = $backupInfo->getBackupFilePaths();
+            if (isset($backupPaths['error'])) {
+                $status->add('WARNING: There is a problem with backup files! Performing rollback from these'
+                    . ' files may cause the Magento application to be unstable');
+                foreach ($backupPaths['error'] as $error) {
+                    $status->add($error);
+                }
+                unset($backupPaths['error']);
+            }
+
+            foreach (array_values($backupPaths) as $backupPath) {
+                $queue->addJobs(
+                    ['jobs' =>
+                        [
+                            'name' => $backupPath['type'],
+                            'params'=> ['backup_file_name' => $backupPath['filename']]
+                        ]
+                    ]
+                );
+            }
+
+            $status->setUpdateError(false);
+        } catch (\Exception $e) {
+            $status->setUpdateError(true);
+            $status->add('Error in Rollback:' . $e->getMessage());
+        }
+    } elseif ($_SERVER['PATH_INFO'] === '/status') {
+        $complete = !$status->isUpdateInProgress() && $queue->isEmpty() && !$status->isUpdateError();
+        if ($complete) {
+            $status->clear();
+        }
+        echo json_encode(
+            [
+                'statusMessage' => $statusMessage,
+                'isUpdateInProgress' => $isUpdateInProgress,
+                'complete' => $complete,
+                'error' => $status->isUpdateError(),
+                'pending' => $pending,
+            ]
+        );
+    }
 } else {
+    $type = 'default';
+    $titles = [];
+    $defaultHeaderTitle = 'Magento Updater';
+    if (file_exists(MAGENTO_BP . '/var/.type.json')) {
+        $typeFlag = json_decode(file_get_contents(MAGENTO_BP . '/var/.type.json'), true);
+        $headerTitle = isset($typeFlag['headerTitle']) ? $typeFlag['headerTitle'] : $defaultHeaderTitle;
+        $titles = $typeFlag['titles'];
+    } else {
+        $headerTitle = $defaultHeaderTitle;
+    }
     include __DIR__ . '/app/code/Magento/Update/view/templates/status.phtml';
 }

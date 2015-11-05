@@ -42,28 +42,10 @@ class Reader
         if ($queueFileContent) {
             json_decode($queueFileContent);
             if (json_last_error() !== JSON_ERROR_NONE) {
-                throw new \RuntimeException(sprintf('Content of "%s" must a valid JSON.', $this->queueFilePath));
+                throw new \RuntimeException(sprintf('Content of "%s" must be a valid JSON.', $this->queueFilePath));
             }
             $queue = $queueFileContent;
         }
         return $queue;
-    }
-
-    /**
-     * Clear content of the Magento updater application jobs queue file.
-     *
-     * @return void
-     * @throws \RuntimeException If queue file exists but cannot be cleared
-     */
-    public function clearQueue()
-    {
-        if (file_exists($this->queueFilePath)) {
-            $isClearedSuccessfully = (false !== file_put_contents($this->queueFilePath, ''));
-            if (!$isClearedSuccessfully) {
-                throw new \RuntimeException(
-                    sprintf('Magento updater application jobs queue file "%s" cannot be cleared.', $this->queueFilePath)
-                );
-            }
-        }
     }
 }

@@ -31,19 +31,6 @@ class JobRollbackTest extends \PHPUnit_Framework_TestCase
         }
     }
 
-    /**
-     * @expectedException \Exception
-     * @expectedExceptionMessage Missing required parameter: backup_file_name
-     */
-    public function testManualRollbackNoParameter()
-    {
-        $jobRollback = new \Magento\Update\Queue\JobRollback(
-            'rollback',
-            ['backup_file_name' => null]
-        );
-        $jobRollback->execute();
-    }
-
     public function testManualRollbackBackupFileUnavailable()
     {
         $backupFileName = UPDATER_BP . '/dev/tests/integration/testsuite/Magento/Update/_files/backup/' . 'fake.zip';

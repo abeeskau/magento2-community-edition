@@ -59,6 +59,7 @@ class CronTest extends \PHPUnit_Framework_TestCase
     protected function tearDown()
     {
         $this->status->setUpdateInProgress(false);
+        $this->status->setUpdateError(false);
         if (file_exists($this->backupToRollback)) {
             unlink($this->backupToRollback);
         }
@@ -72,6 +73,9 @@ class CronTest extends \PHPUnit_Framework_TestCase
         if (is_dir($this->backupPath)) {
             rmdir($this->backupPath);
             rmdir(TESTS_TEMP_DIR . '/var');
+        }
+        if (file_exists(MAGENTO_BP . '/var/.update_queue.json')) {
+            file_put_contents(MAGENTO_BP . '/var/.update_queue.json', '');
         }
     }
 
@@ -108,9 +112,9 @@ class CronTest extends \PHPUnit_Framework_TestCase
         $jobStatus = $this->status->get();
         // verify removals
         $this->assertNotContains('An error occurred while executing job "<remove_backups>"', $jobStatus);
-        $this->assertContains('Job "<remove_backups>{"backups_file_names":["' .
-            str_replace('/', '\\/', $this->backupToRemoveA) . '","'. str_replace('/', '\\/', $this->backupToRemoveB) .
-            '"]}" has been successfully completed', $jobStatus);
+        $this->assertContains('Job "remove_backups {"backups_file_names":["' .
+            $this->backupToRemoveA . '","' . $this->backupToRemoveB .
+            '"]}" has successfully completed', $jobStatus);
         $this->assertFalse(file_exists($this->backupToRemoveA));
         $this->assertFalse(file_exists($this->backupToRemoveB));
     }

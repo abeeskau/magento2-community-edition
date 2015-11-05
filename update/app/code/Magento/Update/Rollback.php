@@ -5,6 +5,8 @@
  */
 
 namespace Magento\Update;
+use Magento\Update\Backup\BackupInfo;
+use Magento\Update\ExcludeFilter;
 
 /**
  * Class for rollback capabilities
@@ -22,7 +24,7 @@ class Rollback
     protected $restoreTargetDir;
 
     /**
-     * @var string
+     * @var Status
      */
     protected $status;
 
@@ -32,59 +34,32 @@ class Rollback
      * @param string|null $backupFileDir
      * @param string|null $restoreTargetDir
      * @param Status|null $status
+     * @param BackupInfo|null $backupInfo
      */
-    public function __construct($backupFileDir = null, $restoreTargetDir = null, Status $status = null)
-    {
-        $this->backupFileDir = $backupFileDir ? $backupFileDir : UPDATER_BACKUP_DIR;
+    public function __construct(
+        $backupFileDir = null,
+        $restoreTargetDir = null,
+        Status $status = null,
+        BackupInfo $backupInfo = null
+    ) {
+        $this->backupFileDir = $backupFileDir ? $backupFileDir : BACKUP_DIR;
         $this->restoreTargetDir = $restoreTargetDir ? $restoreTargetDir : MAGENTO_BP;
         $this->status = $status ? $status : new Status();
+        $this->backupInfo = $backupInfo ? $backupInfo : new BackupInfo();
     }
 
     /**
      * Restore Magento code from the backup archive.
      *
-     * Rollback to the code version stored in the specified backup archive.
-     * If no archive specified, use the the most recent one.
+     * Rollback to the code/media version stored in the specified backup archive.
      *
-     * @param string|null $backupFilePath
-     * @throws \RuntimeException
-     * @return $this
+     * @param string $backupFilePath
+     * @return void
      */
-    public function execute($backupFilePath = null)
+    public function execute($backupFilePath)
     {
-        if (null === $backupFilePath) {
-            $backupFilePath = $this->getLastBackupFilePath();
-        }
         $this->status->add(sprintf('Restoring archive from "%s" ...', $backupFilePath));
-        if (!file_exists($backupFilePath)) {
-            throw new \RuntimeException(sprintf('"%s" backup file does not exist.', $backupFilePath));
-        }
         $this->unzipArchive($backupFilePath);
-        return $this;
-    }
-
-    /**
-     * Find the last backup file from backup directory.
-     *
-     * @throws \RuntimeException
-     * @return string
-     */
-    protected function getLastBackupFilePath()
-    {
-        $allFileList = scandir($this->backupFileDir, SCANDIR_SORT_DESCENDING);
-        $backupFileName = '';
-
-        foreach ($allFileList as $fileName) {
-            if (strpos($fileName, 'backup') !== false) {
-                $backupFileName = $fileName;
-                break;
-            }
-        }
-
-        if (empty($backupFileName)) {
-            throw new \RuntimeException("No available backup file found.");
-        }
-        return $this->backupFileDir . $backupFileName;
     }
 
     /**
@@ -94,16 +69,99 @@ class Rollback
      * @throws \RuntimeException
      * @return $this
      */
-    protected function unzipArchive($backupFilePath)
+    private function unzipArchive($backupFilePath)
     {
-        $command = sprintf('unzip -o %s -d %s', $backupFilePath, $this->restoreTargetDir);
-        exec($command, $output, $return);
-        if ($return) {
-            throw new \RuntimeException(
-                sprintf('Error happened during execution of command "%s": %s', $command, implode("\n", $output))
-            );
+        $phar = new \PharData($backupFilePath);
+        $tarFile = str_replace('.tgz', '.tar', $backupFilePath);
+        if (@file_exists($tarFile)) {
+            @unlink($tarFile);
         }
-        $this->status->add(sprintf('Backup of Magento code was successfully restored: "%s"', $backupFilePath));
-        return $this;
+        $phar->decompress();
+        $tar = new \PharData($tarFile);
+
+        if (strpos($backupFilePath, BackupInfo::BACKUP_MEDIA) > 0 ) {
+            $this->deleteDirectory($this->restoreTargetDir . '/pub/media');
+        } elseif (strpos($backupFilePath, BackupInfo::BACKUP_CODE) > 0 ) {
+            $blackListFolders = $this->backupInfo->getBlacklist();
+            $exclusions = [];
+            foreach ($blackListFolders as $blackListFolder) {
+                $exclusions[] = $this->restoreTargetDir . '/' . $blackListFolder;
+            }
+            try {
+                $this->deleteDirectory($this->restoreTargetDir, $exclusions);
+            } catch (\Exception $e) {
+                $this->status->setUpdateError();
+                $this->status->add('Error during rollback ' . $e->getMessage());
+            }
+        } else {
+            $this->status->setUpdateError();
+            $this->status->add('Invalid backup type');
+        }
+        $tar->extractTo($this->restoreTargetDir , null, true);
+        @unlink($tarFile);
+
+        //TODO Temporary solution, can be removed when MAGETWO-38589 is fixed.
+        if (strpos($backupFilePath, BackupInfo::BACKUP_MEDIA) > 0 ) {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($this->restoreTargetDir . '/pub/media'),
+                \RecursiveIteratorIterator::SELF_FIRST
+            );
+            foreach($iterator as $item) {
+                @chmod($item, 0777);
+            }
+        } elseif (strpos($backupFilePath, BackupInfo::BACKUP_CODE) > 0 ) {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($this->restoreTargetDir),
+                \RecursiveIteratorIterator::SELF_FIRST
+            );
+            foreach($iterator as $item) {
+                @chmod($item, 0755);
+            }
+            $writeAccessFolders = ['/pub/media', '/pub/static', '/var'];
+            foreach ($writeAccessFolders as $folder) {
+                if (file_exists($this->restoreTargetDir . $folder)) {
+                    $iterator = new \RecursiveIteratorIterator(
+                        new \RecursiveDirectoryIterator($this->restoreTargetDir . $folder),
+                        \RecursiveIteratorIterator::SELF_FIRST
+                    );
+                    foreach($iterator as $item) {
+                        @chmod($item, 0777);
+                    }
+                }
+            }
+        }
+        //TODO Till here
+    }
+
+    /**
+     * Recursively remove files and directories
+     *
+     * @param string $dir
+     * @param array $exclude
+     * @return bool
+     */
+    private function deleteDirectory($dir, $exclude = []) {
+
+        $filesystemIterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir),
+            \RecursiveIteratorIterator::CHILD_FIRST
+        );
+
+        $iterator = new ExcludeFilter($filesystemIterator, $exclude);
+
+        foreach ($iterator as $item) {
+            $itemToBeDeleted = $item->__toString();
+            if ($item->isDir()) {
+                rmdir($itemToBeDeleted);
+            } else {
+                unlink($itemToBeDeleted);
+            }
+        }
+
+        // If $dir is empty with no child items, iterator will not be valid.
+        // See http://php.net/manual/en/directoryiterator.valid.php
+        if (is_dir($dir) && !(new \FilesystemIterator($dir))->valid()) {
+            rmdir($dir);
+        }
     }
 }

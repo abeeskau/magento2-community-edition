@@ -7,7 +7,7 @@
 error_reporting(E_ALL);
 
 define('UPDATER_BP', realpath(__DIR__ . '/../'));
-define('UPDATER_BACKUP_DIR', UPDATER_BP . '/var/backup/');
 define('MAGENTO_BP', realpath(__DIR__ . '/../../'));
+define('BACKUP_DIR', MAGENTO_BP . '/var/backups/');
 
 require_once UPDATER_BP . '/vendor/autoload.php';

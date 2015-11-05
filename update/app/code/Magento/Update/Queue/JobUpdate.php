@@ -6,53 +6,75 @@
 
 namespace Magento\Update\Queue;
 
-use Magento\Update\Queue\JobUpdate\ComposerManager;
+use Magento\Composer\MagentoComposerApplication;
+use Magento\Update\Queue;
 use Magento\Update\Backup;
 use Magento\Update\Rollback;
-use Magento\Update\MaintenanceMode;
 
 /**
  * Magento updater application 'update' job.
  */
 class JobUpdate extends AbstractJob
 {
-    /** @var \Magento\Update\Backup */
+    /**
+     * @var \Magento\Update\Backup
+     */
     protected $backup;
 
-    /** @var \Magento\Update\Queue\JobRollback */
+    /**
+     * @var \Magento\Update\Queue\JobRollback
+     */
     protected $jobRollback;
 
-    /** @var \Magento\Update\Queue\JobUpdate\ComposerManager */
-    protected $composerManager;
-
-    /** @var \Magento\Update\MaintenanceMode */
-    protected $maintenanceMode;
+    /**
+     * @var Rollback
+     */
+    protected $rollback;
 
     /**
-     * Initialize job instance
+     * @var MagentoComposerApplication
+     */
+    protected $composerApp;
+
+    /**
+     * @var Queue
+     */
+    protected $queue;
+
+    /**
+     * Constructor
      *
      * @param string $name
      * @param array $params
-     * @param \Magento\Update\Status|null $status
-     * @param \Magento\Update\Backup|null $backup
-     * @param \Magento\Update\Rollback|null $rollback
-     * @param \Magento\Update\Queue\JobUpdate\ComposerManager|null $composerManager
-     * @param \Magento\Update\MaintenanceMode|null $maintenanceMode
+     * @param Queue $queue
+     * @param MagentoComposerApplication $composerApp
+     * @param \Magento\Update\Status $status
+     * @param Backup $backup
+     * @param Rollback $rollback
      */
     public function __construct(
         $name,
         $params,
+        Queue $queue = null,
+        MagentoComposerApplication $composerApp = null,
         \Magento\Update\Status $status = null,
-        \Magento\Update\Backup $backup = null,
-        \Magento\Update\Rollback $rollback = null,
-        \Magento\Update\Queue\JobUpdate\ComposerManager $composerManager = null,
-        \Magento\Update\MaintenanceMode $maintenanceMode = null
+        Backup $backup = null,
+        Rollback $rollback = null
     ) {
         parent::__construct($name, $params, $status);
+        $this->queue = $queue ? $queue : new Queue();
         $this->backup = $backup ? $backup : new Backup();
         $this->rollback = $rollback ? $rollback : new Rollback();
-        $this->composerManager = $composerManager ? $composerManager : new ComposerManager();
-        $this->maintenanceMode = $maintenanceMode ? $maintenanceMode : new MaintenanceMode();
+
+        $vendorPath = MAGENTO_BP . '/' . (include (MAGENTO_BP . '/app/etc/vendor_path.php'));
+        $composerPath = $vendorPath . '/../composer.json';
+        $composerPath = realpath($composerPath);
+
+        $this->composerApp = $composerApp ? $composerApp :
+            new MagentoComposerApplication(
+                MAGENTO_BP . '/var/composer_home',
+                $composerPath
+            );
     }
 
     /**
@@ -60,59 +82,50 @@ class JobUpdate extends AbstractJob
      */
     public function execute()
     {
-        $this->maintenanceMode->set(true);
-        $this->backup->execute();
         try {
             $this->status->add('Starting composer update...');
-            foreach ($this->params as $directive => $params) {
-                $this->composerManager->updateComposerConfigFile($directive, $params);
+            if (isset($this->params['components'])) {
+                $packages = [];
+                foreach ($this->params['components'] as $compObj) {
+                    $packages[] = implode(' ', $compObj);
+                }
+                foreach ($packages as $package) {
+                    if (strpos($package, 'magento/product-enterprise-edition') !== false) {
+                        $this->composerApp->runComposerCommand(
+                            [
+                                'command' => 'remove',
+                                'packages' => ['magento/product-community-edition'],
+                                '--no-update' => true
+                            ]
+                        );
+                    }
+                }
+                $this->status->add(
+                    $this->composerApp->runComposerCommand(
+                        ['command' => 'require', 'packages' => $packages, '--no-update' => true]
+                    )
+                );
+            } else {
+                throw new \RuntimeException('Cannot find component to update');
             }
-            $this->composerManager->runUpdate();
-            $this->status->setUpdateError(false);
-            $this->maintenanceMode->set(false);
+            $this->status->add($this->composerApp->runComposerCommand(['command' => 'update']));
             $this->status->add('Composer update completed successfully');
+            $this->createSetupUpgradeTasks();
         } catch (\Exception $e) {
             $this->status->setUpdateError(true);
-            try {
-                $this->rollback->execute();
-                $this->status->setUpdateError(false);
-                $this->maintenanceMode->set(false);
-            } catch (\Exception $e) {
-                throw new \RuntimeException(sprintf('Could not complete %s successfully: %s', $this, $e->getMessage()));
-            }
             throw new \RuntimeException(sprintf('Could not complete %s successfully: %s', $this, $e->getMessage()));
         }
-        $this->flushMagentoCache();
         return $this;
     }
 
     /**
-     * Flash filesystem caches
+     * Create setup:upgrade task for setup application cron
      *
      * @return void
      */
-    protected function flushMagentoCache()
+    private function createSetupUpgradeTasks()
     {
-        $cacheDirs = [MAGENTO_BP . '/var', MAGENTO_BP . '/pub/static'];
-        $blacklist = ['.', '..', '.htaccess'];
-
-        $this->status->add('Flushing cache:');
-        foreach ($cacheDirs as $cacheDir) {
-            $elementsToRemove[] = array_diff(scandir($cacheDir), $blacklist);
-            foreach ($elementsToRemove as $element) {
-                $path = $cacheDir . '/' . $element;
-                $this->status->add($path);
-                if (is_dir($path)) {
-                    exec('rm -rf ' . $path, $output, $return);
-                    if ($return) {
-                        $this->status->add(sprintf('Could not delete "%s", try to do it manually', $path));
-                    }
-                } else if (is_file($path)) {
-                    if (!unlink($path)) {
-                        $this->status->add(sprintf('Could not delete "%s", try to do it manually', $path));
-                    }
-                }
-            }
-        }
+        $jobs = [['name' => 'setup:upgrade', 'params' => []]];
+        $this->queue->addJobs($jobs);
     }
 }
